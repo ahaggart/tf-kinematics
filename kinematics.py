@@ -57,9 +57,17 @@ def kin_solver_fn(features,labels,mode,params):
     # output layer
     result = tf.layers.dense(net,units=params['num_joints'],activation=None)
 
-    lengths = features.slice(0) #the lengths are a feature
+    # build a 2 dimensional tensor by concatenating length tensors
+    length_list = [features['len{}'].format(i) for i in range(0,params['num_joints'])]
+    lengths = tf.concat(length_list,1)
 
-    kinematics = forward_kinematics_3(result,lengths)
+    # build a 2 dimensional tensor by concatenating angle tensors
+    theta_list = [features['theta{}'].format(i) for i in range(0,params['num_joints'])]
+    start_angles = tf.concat(length_list,1)
+
+    # use the supplied kinematic equation to find end affector location
+    # TODO: transform/normalize outputs to [0,2pi]?
+    kinematics = params['kinematic_eqn'](result,lengths)
 
     #actions for prediction mode
 
@@ -70,7 +78,12 @@ def kin_solver_fn(features,labels,mode,params):
         predictions=kinematics,
         reduction=None)
 
-    angular_loss = 0 # compute the difference from the calculated state to the previous state
+    # compute the difference from the calculated state to the previous state
+    # minimize joint adjustment to reach new position
+    angular_diff = tf.subtract(result,start_angles)
+    angular_loss = tf.atan(tf.sin(angular_diff),tf.cos(angular_diff))
+
+    # TODO: how to weight the angular and distance losses?
 
     #actions for training mode
 
@@ -84,5 +97,6 @@ kinematics_solver = tf.estimator.Estimator(
     model_dir="~/Documents/Yonder/kiNNematics/models/{}seg".format(num_joints),
     params={
         'feature_columns':feature_columns,
-        'num_joints':num_joints})
+        'num_joints':num_joints,
+        'kinematic_eqn':forward_kinematics_3})
 
