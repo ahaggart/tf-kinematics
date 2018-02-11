@@ -10,7 +10,8 @@ def kin_input_gen(kin_fn,batch_size,num_joints):
     lengths = []
     for joint in range(0,num_joints):
         thetas.append(tf.constant([[random.random()*2*np.pi] for i in iterations],dtype=np.float32))
-        lengths.append(tf.constant([[random.random()] for i in iterations],dtype=np.float32))
+        lengths.append(tf.constant([[1] for i in iterations],dtype=np.float32))
+        # lengths.append(tf.constant([[random.random()] for i in iterations],dtype=np.float32))
     theta_features = dict([('theta{}'.format(i),thetas[i]) for i in range(0,num_joints)])
     length_features = dict([('len{}'.format(i),lengths[i]) for i in range(0,num_joints)])
 
@@ -18,7 +19,7 @@ def kin_input_gen(kin_fn,batch_size,num_joints):
     perturbation_amount = 0.01 #centimeters(?)
     perturbation_t = tf.constant([[perturbation_amount]])
     perturbations = tf.concat([tf.multiply(
-                        tf.constant([[random.random(),random.random(),random.random()]]),
+                        tf.constant([[random.random(),random.random(),0]]),
                         perturbation_t) 
                     for i in iterations],0)
     goal_positions_t = tf.add(positions,perturbations)
@@ -32,7 +33,44 @@ def kin_input_gen(kin_fn,batch_size,num_joints):
     features.update(theta_features)
     features.update(length_features)
     features.update(goal_positions)
+    print('got some output')
     return (features,goal_positions_t)
+
+def kinematic_input_generator(kin_fn,num_joints):
+    while True:
+        thetas = []
+        lengths = []
+        for joint in range(0,num_joints):
+            thetas.append(tf.constant([[random.random()*2*np.pi]],dtype=np.float32))
+            lengths.append(tf.constant([[random.random()]],dtype=np.float32))
+        theta_features = dict([('theta{}'.format(i),thetas[i]) for i in range(0,num_joints)])
+        length_features = dict([('len{}'.format(i),lengths[i]) for i in range(0,num_joints)])
+
+        positions = kin_fn(tf.concat(thetas,1),tf.concat(lengths,1)) 
+        perturbation_amount = 0.01 #centimeters(?)
+        perturbation_t = tf.constant([[perturbation_amount]])
+        perturbations = tf.multiply(
+                            tf.constant([[random.random(),random.random(),0]]),
+                            perturbation_t)
+        goal_positions_t = tf.add(positions,perturbations)
+        goal_positions = {
+            "goal_x":goal_positions_t[:,0],
+            "goal_y":goal_positions_t[:,1],
+            "goal_z":goal_positions_t[:,2]
+        }
+        # merge all the dictionaries
+        features = {}
+        features.update(theta_features)
+        features.update(length_features)
+        features.update(goal_positions)
+        loop = False
+        print('got some output')
+        yield (features,goal_positions_t)
+
+def build_kinematic_training_dataset(kin_fn,batch_size,num_joints):
+    return tf.data.Dataset.from_generator(
+        lambda:kin_input_gen(kin_fn,batch_size,num_joints)
+    )
 
 def move_to_position(x,y,z):
     goal_v = np.array([x,y,z])
@@ -138,6 +176,7 @@ def kin_solver_fn(features,labels,mode,params):
     assert mode == tf.estimator.ModeKeys.TRAIN 
 
     optimizer = tf.train.AdamOptimizer()
+    # optimizer = tf.train.AdagradOptimizer(0.01)
     train_op = optimizer.minimize(combined_loss, global_step=tf.train.get_global_step())
     return tf.estimator.EstimatorSpec(mode, loss=combined_loss, train_op=train_op)
 
@@ -154,8 +193,10 @@ def main(argv):
     num_joints = 3
     kinematic_eqn = forward_kinematics_3
     batch_size=1000
-    hidden_layers=10
-    hidden_layer_size=15
+    hidden_layers=5
+    hidden_layer_size=100
+    num_steps=int(argv[3])
+    nickname=argv[2]
 
     seg_zero_len = tf.feature_column.numeric_column(key="len0")
     seg_one_len  = tf.feature_column.numeric_column(key="len1")
@@ -173,24 +214,24 @@ def main(argv):
                        joint_zero_theta,joint_one_theta,joint_two_theta,
                        goal_x,goal_y,goal_z]
 
-    model_dir_base = "models/{}seg/{}l{}u";
+    model_dir_base = "models/{}/{}seg/{}l{}u";
 
     kinematics_solver = tf.estimator.Estimator(
         model_fn=kin_solver_fn,
-        model_dir=model_dir_base.format(num_joints,hidden_layers,hidden_layer_size),
+        model_dir=model_dir_base.format(nickname,num_joints,hidden_layers,hidden_layer_size),
         params={
             'feature_columns':feature_columns,
             'num_joints':num_joints,
             'kinematic_eqn':kinematic_eqn,
-            'hidden_units':[hidden_layer_size for i in range(0,hidden_layers)]
+            'hidden_units':[hidden_layer_size for i in range(0,hidden_layers)],
             })
 
     if argv[1] == '--train':
         input_fn = lambda:kin_input_gen(kinematic_eqn,batch_size,num_joints)
-        kinematics_solver.train(input_fn=input_fn,steps=100000)
+        kinematics_solver.train(input_fn=input_fn,steps=num_steps)
     elif argv[1] == '--solve':
         solutions = kinematics_solver.predict(
-            input_fn=lambda:move_to_position(float(argv[2]),float(argv[2]),float(argv[3]))
+            input_fn=lambda:move_to_position(float(argv[2]),float(argv[3]),float(argv[4]))
         )
         for solution in solutions:
             print(solution)
