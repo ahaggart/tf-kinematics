@@ -193,8 +193,8 @@ def main(argv):
     num_joints = 3
     kinematic_eqn = forward_kinematics_3
     batch_size=1000
-    hidden_layers=5
-    hidden_layer_size=100
+    hidden_layers=25
+    hidden_layer_size=25
     num_steps=int(argv[3])
     nickname=argv[2]
 
