@@ -75,7 +75,7 @@ if __name__ == "__main__":
     print_interval = 100
     num_joints = 3
     batch_size = 10000
-    num_steps = 10000
+    num_steps = 100000
     lengths = [1,1,1]
     kinematics_eqn = kin_eqn.forward_kinematics_3
 

@@ -18,7 +18,7 @@ def forward_kinematics_3(thetas,lengths):
     y_final = tf.reduce_sum(y_comps,1,keepdims=True)
     z_final = tf.zeros(tf.shape(x_final),dtype=tf.float32)
 
-    return tf.concat([x_final,y_final,z_final],1)
+    return tf.concat([x_final,y_final,z_final],1,name='forward_kinematics_3')
 
 def euclidian_distance_sq(x,y):
     return tf.reduce_sum(tf.square(tf.subtract(x,y)),[1]) 
@@ -40,3 +40,13 @@ def random_end_affector(max_length,batch_size):
         theta = random.random()*2*np.pi
         batch.append([r*math.cos(theta),r*math.sin(theta),0])
     return np.array(batch).reshape(-1,3)
+
+def move_to_position(start_pos,end_pos,step_size=0.01):
+    path = np.subtract(end_pos,start_pos)
+    path_len = np.linalg.norm(path)
+    delta = np.divide(path,path_len)
+    steps = []
+    for step in np.arange(0,path_len,step_size):
+        step_point = np.add(start_pos,np.multiply(step,delta))     
+        steps.append(step_point)
+    return np.array(steps).reshape(-1,3)
